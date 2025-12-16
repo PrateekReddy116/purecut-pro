@@ -1,13 +1,13 @@
 import { motion } from "framer-motion";
-import { 
-  FileImage, 
-  FileText, 
-  Image, 
-  Archive, 
-  Wand2, 
+import {
+  FileImage,
+  FileText,
+  Image,
+  Archive,
+  Wand2,
   FileSpreadsheet,
   FileType,
-  Layers
+  Layers,
 } from "lucide-react";
 
 const tools = [
@@ -23,45 +23,39 @@ const tools = [
 ];
 
 export function LogoCarousel() {
-  // Double the items for seamless loop
   const duplicatedTools = [...tools, ...tools];
 
   return (
-    <section className="py-16 overflow-hidden">
-      <div className="container px-4 mx-auto mb-12 text-center">
+    <section className="py-16 border-y border-border overflow-hidden">
+      <div className="container px-6 mb-8 text-center">
         <motion.p
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 10 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="text-muted-foreground text-lg"
+          transition={{ duration: 0.4 }}
+          className="text-xs text-muted-foreground uppercase tracking-widest"
         >
-          Supports all major file formats
+          Supports all major formats
         </motion.p>
       </div>
 
       <div className="relative">
-        {/* Gradient masks */}
-        <div className="absolute left-0 top-0 bottom-0 w-40 bg-gradient-to-r from-background to-transparent z-10" />
-        <div className="absolute right-0 top-0 bottom-0 w-40 bg-gradient-to-l from-background to-transparent z-10" />
+        <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
+        <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
 
-        {/* Scrolling container */}
         <motion.div
           animate={{ x: [0, "-50%"] }}
           transition={{
-            duration: 30,
+            duration: 40,
             repeat: Infinity,
             ease: "linear",
           }}
-          className="flex gap-8 w-fit"
+          className="flex gap-10 w-fit"
         >
           {duplicatedTools.map((tool, index) => (
-            <div
-              key={index}
-              className="flex items-center gap-3 px-6 py-4 rounded-xl glass hover:bg-secondary/50 transition-colors cursor-default shrink-0"
-            >
-              <tool.icon className="h-8 w-8 text-primary" />
-              <span className="text-lg font-medium text-foreground">{tool.name}</span>
+            <div key={index} className="flex items-center gap-2 shrink-0">
+              <tool.icon className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">{tool.name}</span>
             </div>
           ))}
         </motion.div>
