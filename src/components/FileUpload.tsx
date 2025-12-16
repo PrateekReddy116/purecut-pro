@@ -17,7 +17,7 @@ interface FileUploadProps {
 export function FileUpload({
   accept = { "image/*": [".png", ".jpg", ".jpeg", ".webp", ".gif"] },
   maxFiles = 10,
-  maxSize = 20 * 1024 * 1024, // 20MB
+  maxSize = 20 * 1024 * 1024,
   onFilesSelected,
   className,
   title = "Drop files here",
@@ -55,65 +55,48 @@ export function FileUpload({
       <div
         {...getRootProps()}
         className={cn(
-          "relative border-2 border-dashed rounded-2xl p-8 transition-all duration-300 cursor-pointer",
-          "hover:border-primary/50 hover:bg-primary/5",
-          isDragActive
-            ? "border-primary bg-primary/10 scale-[1.02]"
-            : "border-border",
+          "relative border-2 border-dashed rounded-xl p-10 transition-all duration-200 cursor-pointer",
+          "hover:border-muted-foreground/30",
+          isDragActive ? "border-foreground bg-secondary" : "border-border",
           files.length > 0 && "border-solid"
         )}
       >
         <input {...getInputProps()} />
 
-        <div className="flex flex-col items-center justify-center gap-4 text-center">
-          <motion.div
-            animate={{
-              scale: isDragActive ? 1.1 : 1,
-              y: isDragActive ? -5 : 0,
-            }}
-            className={cn(
-              "w-16 h-16 rounded-2xl flex items-center justify-center",
-              "bg-primary/10"
-            )}
-          >
-            <Upload
-              className={cn(
-                "h-8 w-8",
-                isDragActive ? "text-primary" : "text-muted-foreground"
-              )}
-            />
-          </motion.div>
+        <div className="flex flex-col items-center justify-center gap-3 text-center">
+          <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+            <Upload className="h-4 w-4 text-muted-foreground" />
+          </div>
 
           <div>
-            <p className="text-lg font-medium">{title}</p>
-            <p className="text-sm text-muted-foreground">{description}</p>
-            <p className="text-xs text-muted-foreground mt-2">
+            <p className="text-sm font-medium">{title}</p>
+            <p className="text-xs text-muted-foreground">{description}</p>
+            <p className="text-xs text-muted-foreground mt-1">
               Max {maxFiles} files, up to {maxSize / 1024 / 1024}MB each
             </p>
           </div>
         </div>
       </div>
 
-      {/* File list */}
       <AnimatePresence>
         {files.length > 0 && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="mt-4 space-y-2"
+            className="mt-3 space-y-1.5"
           >
             {files.map((file, index) => (
               <motion.div
                 key={`${file.name}-${index}`}
-                initial={{ opacity: 0, x: -20 }}
+                initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                className="flex items-center gap-3 p-3 rounded-xl bg-secondary/50"
+                exit={{ opacity: 0, x: 10 }}
+                className="flex items-center gap-2.5 p-2.5 rounded-lg bg-secondary"
               >
-                <FileImage className="h-5 w-5 text-primary shrink-0" />
+                <FileImage className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{file.name}</p>
+                  <p className="text-xs font-medium truncate">{file.name}</p>
                   <p className="text-xs text-muted-foreground">
                     {(file.size / 1024 / 1024).toFixed(2)} MB
                   </p>
@@ -123,9 +106,9 @@ export function FileUpload({
                     e.stopPropagation();
                     removeFile(index);
                   }}
-                  className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
+                  className="p-1 rounded hover:bg-background transition-colors"
                 >
-                  <X className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                  <X className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
               </motion.div>
             ))}
@@ -151,26 +134,24 @@ export function ProcessingStatus({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-6 rounded-2xl glass"
+      className="p-4 rounded-xl bg-secondary"
     >
-      <div className="flex items-center gap-4">
-        <div className="relative">
-          <Loader2 className="h-8 w-8 text-primary animate-spin" />
-        </div>
+      <div className="flex items-center gap-3">
+        <Loader2 className="h-4 w-4 animate-spin" />
         <div className="flex-1">
-          <p className="font-medium">{status}</p>
-          <div className="mt-2 h-2 rounded-full bg-secondary overflow-hidden">
+          <p className="text-sm font-medium">{status}</p>
+          <div className="mt-1.5 h-1 rounded-full bg-background overflow-hidden">
             <motion.div
-              className="h-full bg-primary rounded-full"
+              className="h-full bg-foreground rounded-full"
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
               transition={{ duration: 0.3 }}
             />
           </div>
         </div>
-        <span className="text-lg font-bold text-primary">{progress}%</span>
+        <span className="text-sm font-medium">{progress}%</span>
       </div>
     </motion.div>
   );
