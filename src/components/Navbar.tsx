@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Scissors, Menu, X } from "lucide-react";
+import { Scissors, Menu, X, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -16,6 +16,7 @@ export function Navbar() {
   const location = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -24,6 +25,34 @@ export function Navbar() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const storedTheme = window.localStorage.getItem("theme");
+
+    if (storedTheme === "dark" || (!storedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      root.classList.add("dark");
+      setIsDarkMode(true);
+    } else {
+      root.classList.remove("dark");
+      setIsDarkMode(false);
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const root = document.documentElement;
+    const nextIsDark = !isDarkMode;
+
+    setIsDarkMode(nextIsDark);
+
+    if (nextIsDark) {
+      root.classList.add("dark");
+      window.localStorage.setItem("theme", "dark");
+    } else {
+      root.classList.remove("dark");
+      window.localStorage.setItem("theme", "light");
+    }
+  };
 
   const isActive = (path: string) => {
     if (path === "/") return location.pathname === "/";
@@ -78,13 +107,30 @@ export function Navbar() {
             })}
           </div>
 
-          {/* CTA Button */}
-          <Link
-            to="/ai-tools/background-remover"
-            className="hidden md:block px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:opacity-80 transition-opacity"
-          >
-            Get Started
-          </Link>
+          {/* Right side actions */}
+          <div className="flex items-center gap-2">
+            {/* Theme toggle */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+            >
+              {isDarkMode ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </button>
+
+            {/* CTA Button */}
+            <Link
+              to="/ai-tools/background-remover"
+              className="hidden md:block px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:opacity-80 transition-opacity"
+            >
+              Get Started
+            </Link>
+          </div>
 
           {/* Mobile Menu Button */}
           <button

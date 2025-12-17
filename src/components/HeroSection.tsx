@@ -1,11 +1,13 @@
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
+import { RetroGrid } from "./ui/retro-grid";
 
 export function HeroSection() {
   return (
-    <section className="min-h-[85vh] flex items-center justify-center pt-14">
-      <div className="container px-6">
+    <section className="relative min-h-[85vh] flex items-center justify-center pt-14 overflow-hidden">
+      <RetroGrid />
+      <div className="container px-6 relative z-10">
         <div className="max-w-2xl mx-auto text-center">
           {/* Badge */}
           <motion.div
