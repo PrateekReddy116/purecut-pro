@@ -9,17 +9,32 @@ import NotFound from "./pages/NotFound";
 // AI Tools
 import AIToolsIndex from "./pages/AITools";
 import BackgroundRemover from "./pages/AITools/BackgroundRemover";
+import ImageEnhancer from "./pages/AITools/Enhancer";
+import ObjectRemover from "./pages/AITools/ObjectRemover";
+import ImageUpscaler from "./pages/AITools/Upscaler";
 
 // PDF Tools
 import PDFToolsIndex from "./pages/PDFTools";
 import PDFMerge from "./pages/PDFTools/Merge";
+import PDFSplit from "./pages/PDFTools/Split";
+import PDFToImages from "./pages/PDFTools/ToImages";
+import ImagesToPDF from "./pages/PDFTools/FromImages";
+import PDFCompress from "./pages/PDFTools/Compress";
+import PDFProtect from "./pages/PDFTools/Protect";
+import PDFUnlock from "./pages/PDFTools/Unlock";
 
 // Image Tools
 import ImageToolsIndex from "./pages/ImageTools";
 import ImageConvert from "./pages/ImageTools/Convert";
+import ImageCompress from "./pages/ImageTools/Compress";
+import ImageResize from "./pages/ImageTools/Resize";
+import ImageRotate from "./pages/ImageTools/Rotate";
+import AddWatermark from "./pages/ImageTools/Watermark";
 
 // File Tools
 import FileToolsIndex from "./pages/FileTools";
+import CreateArchive from "./pages/FileTools/Compress";
+import ExtractFiles from "./pages/FileTools/Extract";
 
 const queryClient = new QueryClient();
 
@@ -35,32 +50,32 @@ const App = () => (
           {/* AI Tools */}
           <Route path="/ai-tools" element={<AIToolsIndex />} />
           <Route path="/ai-tools/background-remover" element={<BackgroundRemover />} />
-          <Route path="/ai-tools/enhancer" element={<AIToolsIndex />} />
-          <Route path="/ai-tools/object-remover" element={<AIToolsIndex />} />
-          <Route path="/ai-tools/upscaler" element={<AIToolsIndex />} />
+          <Route path="/ai-tools/enhancer" element={<ImageEnhancer />} />
+          <Route path="/ai-tools/object-remover" element={<ObjectRemover />} />
+          <Route path="/ai-tools/upscaler" element={<ImageUpscaler />} />
           
           {/* PDF Tools */}
           <Route path="/pdf-tools" element={<PDFToolsIndex />} />
           <Route path="/pdf-tools/merge" element={<PDFMerge />} />
-          <Route path="/pdf-tools/split" element={<PDFToolsIndex />} />
-          <Route path="/pdf-tools/to-images" element={<PDFToolsIndex />} />
-          <Route path="/pdf-tools/from-images" element={<PDFToolsIndex />} />
-          <Route path="/pdf-tools/compress" element={<PDFToolsIndex />} />
-          <Route path="/pdf-tools/protect" element={<PDFToolsIndex />} />
-          <Route path="/pdf-tools/unlock" element={<PDFToolsIndex />} />
+          <Route path="/pdf-tools/split" element={<PDFSplit />} />
+          <Route path="/pdf-tools/to-images" element={<PDFToImages />} />
+          <Route path="/pdf-tools/from-images" element={<ImagesToPDF />} />
+          <Route path="/pdf-tools/compress" element={<PDFCompress />} />
+          <Route path="/pdf-tools/protect" element={<PDFProtect />} />
+          <Route path="/pdf-tools/unlock" element={<PDFUnlock />} />
           
           {/* Image Tools */}
           <Route path="/image-tools" element={<ImageToolsIndex />} />
           <Route path="/image-tools/convert" element={<ImageConvert />} />
-          <Route path="/image-tools/compress" element={<ImageToolsIndex />} />
-          <Route path="/image-tools/resize" element={<ImageToolsIndex />} />
-          <Route path="/image-tools/rotate" element={<ImageToolsIndex />} />
-          <Route path="/image-tools/watermark" element={<ImageToolsIndex />} />
+          <Route path="/image-tools/compress" element={<ImageCompress />} />
+          <Route path="/image-tools/resize" element={<ImageResize />} />
+          <Route path="/image-tools/rotate" element={<ImageRotate />} />
+          <Route path="/image-tools/watermark" element={<AddWatermark />} />
           
           {/* File Tools */}
           <Route path="/file-tools" element={<FileToolsIndex />} />
-          <Route path="/file-tools/compress" element={<FileToolsIndex />} />
-          <Route path="/file-tools/extract" element={<FileToolsIndex />} />
+          <Route path="/file-tools/compress" element={<CreateArchive />} />
+          <Route path="/file-tools/extract" element={<ExtractFiles />} />
           
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
