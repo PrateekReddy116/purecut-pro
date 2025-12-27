@@ -5,6 +5,8 @@ import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
 
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 const pdfTools: ToolItem[] = [
   { name: "Merge PDFs", href: "/pdf-tools/merge", icon: Combine },
   { name: "Split PDF", href: "/pdf-tools/split", icon: Split },
@@ -27,22 +29,54 @@ export default function PDFCompress() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [result, setResult] = useState({ original: 0, compressed: 0 });
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
     setIsComplete(false);
+    setError(null);
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(null);
+    }
     if (selectedFiles.length > 0) {
       setResult({ original: selectedFiles[0].size, compressed: 0 });
     }
-  }, []);
+  }, [downloadUrl]);
 
   const handleCompress = async () => {
+    if (files.length === 0 || !files[0]) return;
+
     setIsProcessing(true);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    const reductionFactor = compression === "low" ? 0.8 : compression === "medium" ? 0.5 : 0.2;
-    setResult({ ...result, compressed: Math.round(result.original * reductionFactor) });
-    setIsProcessing(false);
-    setIsComplete(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", files[0]);
+      formData.append("level", compression);
+
+      const response = await fetch(`${API_BASE_URL}/pdf/compress`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Compression failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setDownloadUrl(url);
+      setResult({ ...result, compressed: blob.size });
+      setIsComplete(true);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to compress PDF. Please try again.");
+      setIsComplete(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const formatSize = (bytes: number) => {
@@ -136,14 +170,23 @@ export default function PDFCompress() {
                   </>
                 )}
               </button>
-              {isComplete && (
-                <button className="flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors">
+              {isComplete && downloadUrl && (
+                <a
+                  href={downloadUrl}
+                  download="compressed.pdf"
+                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors"
+                >
                   <Download className="h-4 w-4" />
                   Download
-                </button>
+                </a>
               )}
             </div>
           </motion.div>
+        )}
+        {error && (
+          <p className="mt-4 text-sm text-destructive text-center">
+            {error}
+          </p>
         )}
       </div>
     </ToolLayout>

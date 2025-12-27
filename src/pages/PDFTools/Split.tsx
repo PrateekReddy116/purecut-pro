@@ -5,6 +5,8 @@ import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
 
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 const pdfTools: ToolItem[] = [
   { name: "Merge PDFs", href: "/pdf-tools/merge", icon: Combine },
   { name: "Split PDF", href: "/pdf-tools/split", icon: Split },
@@ -21,18 +23,82 @@ export default function PDFSplit() {
   const [pageRange, setPageRange] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
-  const totalPages = 12; // Simulated
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [totalPages, setTotalPages] = useState<number | null>(null);
+  const [isFetchingPages, setIsFetchingPages] = useState(false);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
     setIsComplete(false);
-  }, []);
+    setError(null);
+    setTotalPages(null);
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(null);
+    }
+    if (selectedFiles.length > 0) {
+      const [file] = selectedFiles;
+      setIsFetchingPages(true);
+      (async () => {
+        try {
+          const formData = new FormData();
+          formData.append("file", file);
+          const response = await fetch(`${API_BASE_URL}/pdf/page-count`, {
+            method: "POST",
+            body: formData,
+          });
+          if (!response.ok) {
+            throw new Error(`Page count failed with status ${response.status}`);
+          }
+          const data = await response.json();
+          if (typeof data.pages === "number") {
+            setTotalPages(data.pages);
+          }
+        } catch (err) {
+          console.error(err);
+          setError("Could not read page count for this PDF, but splitting will still work.");
+        } finally {
+          setIsFetchingPages(false);
+        }
+      })();
+    }
+  }, [downloadUrl]);
 
   const handleSplit = async () => {
+    if (files.length === 0 || !files[0]) return;
+
     setIsProcessing(true);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsProcessing(false);
-    setIsComplete(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", files[0]);
+      formData.append("mode", splitMode);
+      if (splitMode === "range") {
+        formData.append("ranges", pageRange);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/pdf/split`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Split failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setDownloadUrl(url);
+      setIsComplete(true);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to split PDF. Please check the page range and try again.");
+      setIsComplete(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -59,7 +125,13 @@ export default function PDFSplit() {
                 <FileText className="h-8 w-8 text-muted-foreground" />
                 <div>
                   <p className="font-medium">{files[0].name}</p>
-                  <p className="text-sm text-muted-foreground">{totalPages} pages</p>
+                  <p className="text-sm text-muted-foreground">
+                    {isFetchingPages
+                      ? "Detecting pages..."
+                      : totalPages !== null
+                      ? `${totalPages} pages`
+                      : "Page count unavailable"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -107,16 +179,18 @@ export default function PDFSplit() {
             )}
 
             {/* Page preview grid */}
-            <div className="space-y-3">
-              <span className="text-sm font-medium text-muted-foreground">Pages</span>
-              <div className="grid grid-cols-6 gap-3">
-                {Array.from({ length: Math.min(totalPages, 12) }).map((_, i) => (
-                  <div key={i} className="aspect-[3/4] rounded-lg bg-secondary border border-border flex items-center justify-center">
-                    <span className="text-sm text-muted-foreground">{i + 1}</span>
-                  </div>
-                ))}
+            {totalPages !== null && (
+              <div className="space-y-3">
+                <span className="text-sm font-medium text-muted-foreground">Pages</span>
+                <div className="grid grid-cols-6 gap-3">
+                  {Array.from({ length: Math.min(totalPages, 12) }).map((_, i) => (
+                    <div key={i} className="aspect-[3/4] rounded-lg bg-secondary border border-border flex items-center justify-center">
+                      <span className="text-sm text-muted-foreground">{i + 1}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Actions */}
             <div className="flex gap-3">
@@ -136,11 +210,15 @@ export default function PDFSplit() {
                   </>
                 )}
               </button>
-              {isComplete && (
-                <button className="flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors">
+              {isComplete && downloadUrl && (
+                <a
+                  href={downloadUrl}
+                  download="split.zip"
+                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors"
+                >
                   <Download className="h-4 w-4" />
                   Download ZIP
-                </button>
+                </a>
               )}
             </div>
           </motion.div>

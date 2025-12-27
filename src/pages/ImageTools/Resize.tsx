@@ -5,6 +5,8 @@ import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
 
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 const imageTools: ToolItem[] = [
   { name: "Format Converter", href: "/image-tools/convert", icon: RefreshCcw },
   { name: "Image Compressor", href: "/image-tools/compress", icon: Shrink },
@@ -29,6 +31,8 @@ export default function ImageResize() {
   const [lockAspectRatio, setLockAspectRatio] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
@@ -73,10 +77,38 @@ export default function ImageResize() {
   };
 
   const handleResize = async () => {
+    if (files.length === 0 || !files[0] || width <= 0 || height <= 0) return;
+    
     setIsProcessing(true);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setIsProcessing(false);
-    setIsComplete(true);
+    setError(null);
+    
+    try {
+      const formData = new FormData();
+      formData.append("image", files[0]);
+      formData.append("width", width.toString());
+      formData.append("height", height.toString());
+      formData.append("maintain_aspect", lockAspectRatio.toString());
+      
+      const response = await fetch(`${API_BASE_URL}/image/resize`, {
+        method: "POST",
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Resize failed with status ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setDownloadUrl(url);
+      setIsComplete(true);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to resize image. Please try again.");
+      setIsComplete(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -181,11 +213,18 @@ export default function ImageResize() {
                     )}
                   </button>
                 </div>
-                {isComplete && (
-                  <button className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors">
+                {isComplete && downloadUrl && (
+                  <a
+                    href={downloadUrl}
+                    download="resized.jpg"
+                    className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors"
+                  >
                     <Download className="h-4 w-4" />
                     Download
-                  </button>
+                  </a>
+                )}
+                {error && (
+                  <p className="text-sm text-destructive text-center mt-2">{error}</p>
                 )}
               </div>
             </div>

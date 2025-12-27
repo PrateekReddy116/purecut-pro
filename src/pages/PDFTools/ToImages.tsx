@@ -5,6 +5,8 @@ import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
 
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 const pdfTools: ToolItem[] = [
   { name: "Merge PDFs", href: "/pdf-tools/merge", icon: Combine },
   { name: "Split PDF", href: "/pdf-tools/split", icon: Split },
@@ -32,17 +34,51 @@ export default function PDFToImages() {
   const [quality, setQuality] = useState("high");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
     setIsComplete(false);
-  }, []);
+    setError(null);
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(null);
+    }
+  }, [downloadUrl]);
 
   const handleConvert = async () => {
+    if (files.length === 0 || !files[0]) return;
+
     setIsProcessing(true);
-    await new Promise((resolve) => setTimeout(resolve, 2500));
-    setIsProcessing(false);
-    setIsComplete(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", files[0]);
+      formData.append("format", format);
+      formData.append("quality", quality);
+
+      const response = await fetch(`${API_BASE_URL}/pdf/to-images`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Conversion failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setDownloadUrl(url);
+      setIsComplete(true);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to convert PDF to images. Please try again.");
+      setIsComplete(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -124,11 +160,15 @@ export default function PDFToImages() {
                   </>
                 )}
               </button>
-              {isComplete && (
-                <button className="flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors">
+              {isComplete && downloadUrl && (
+                <a
+                  href={downloadUrl}
+                  download="pages.zip"
+                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors"
+                >
                   <Download className="h-4 w-4" />
                   Download ZIP
-                </button>
+                </a>
               )}
             </div>
           </motion.div>

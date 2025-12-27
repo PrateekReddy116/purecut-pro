@@ -5,6 +5,8 @@ import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
 
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 const imageTools: ToolItem[] = [
   { name: "Format Converter", href: "/image-tools/convert", icon: RefreshCcw },
   { name: "Image Compressor", href: "/image-tools/compress", icon: Shrink },
@@ -28,8 +30,11 @@ export default function AddWatermark() {
   const [watermarkText, setWatermarkText] = useState("© Your Name");
   const [position, setPosition] = useState("bottom-right");
   const [opacity, setOpacity] = useState(50);
+  const [watermarkImageFile, setWatermarkImageFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
@@ -42,10 +47,46 @@ export default function AddWatermark() {
   }, []);
 
   const handleApply = async () => {
+    if (files.length === 0 || !files[0]) return;
+    if (watermarkType === "text" && !watermarkText.trim()) return;
+    if (watermarkType === "image" && !watermarkImageFile) return;
+    
     setIsProcessing(true);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setIsProcessing(false);
-    setIsComplete(true);
+    setError(null);
+    
+    try {
+      const formData = new FormData();
+      formData.append("image", files[0]);
+      formData.append("watermark_type", watermarkType);
+      formData.append("position", position);
+      formData.append("opacity", opacity.toString());
+      
+      if (watermarkType === "text") {
+        formData.append("watermark_text", watermarkText);
+      } else {
+        formData.append("watermark_image", watermarkImageFile!);
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/image/watermark`, {
+        method: "POST",
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Watermark failed with status ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setDownloadUrl(url);
+      setIsComplete(true);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to add watermark. Please try again.");
+      setIsComplete(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const getPositionClasses = () => {
@@ -136,6 +177,24 @@ export default function AddWatermark() {
                     />
                   </div>
                 )}
+                
+                {/* Image watermark upload */}
+                {watermarkType === "image" && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-muted-foreground">Watermark Image</label>
+                    <FileUpload
+                      accept={{ "image/*": [".png", ".jpg", ".jpeg", ".webp"] }}
+                      maxFiles={1}
+                      onFilesSelected={(selectedFiles) => {
+                        if (selectedFiles.length > 0) {
+                          setWatermarkImageFile(selectedFiles[0]);
+                        }
+                      }}
+                      title="Upload watermark image"
+                      description="PNG with transparency recommended"
+                    />
+                  </div>
+                )}
 
                 {/* Position */}
                 <div className="space-y-3">
@@ -191,11 +250,18 @@ export default function AddWatermark() {
                     )}
                   </button>
                 </div>
-                {isComplete && (
-                  <button className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors">
+                {isComplete && downloadUrl && (
+                  <a
+                    href={downloadUrl}
+                    download="watermarked.png"
+                    className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors"
+                  >
                     <Download className="h-4 w-4" />
                     Download
-                  </button>
+                  </a>
+                )}
+                {error && (
+                  <p className="text-sm text-destructive text-center mt-2">{error}</p>
                 )}
               </div>
             </div>

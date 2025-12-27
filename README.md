@@ -24,13 +24,29 @@ All backend code lives in `backend/`.
 
 ### 2.1. Create and activate a virtual environment
 
-From the project root:
+From the project root (Windows / PowerShell):
 
 ```powershell
 cd "E:\PureCut Pro\purecut-suite"
 py -3.11 -m venv .venv
 .\.venv\Scripts\activate
 ```
+
+On macOS / Linux:
+
+```bash
+cd "/path/to/purecut-suite"
+python3.11 -m venv .venv
+source .venv/bin/activate
+```
+
+Notes:
+
+- The `.venv` directory is **already ignored** by `.gitignore`, so it will not be committed to Git.
+- Each time you start a new terminal, **re‑activate** the venv before running backend commands:
+  - Windows: `.\.venv\Scripts\activate`
+  - macOS/Linux: `source .venv/bin/activate`
+- To deactivate: run `deactivate` in the terminal.
 
 ### 2.2. Install backend dependencies
 
@@ -135,3 +151,77 @@ For the tools implemented in the Python backend:
   - If Real-ESRGAN is unavailable or fails, falls back to **high-quality bicubic resize** using Pillow.
 
 These choices balance **quality**, **performance**, and **ease of installation**, especially on Windows.
+
+---
+
+## 5. PDF tools (backend + frontend)
+
+PureCut Pro also includes a full set of **server-backed PDF tools**, implemented in the FastAPI backend and wired to the React frontend.
+
+### 5.1. Backend PDF endpoints
+
+All PDF endpoints live in `backend/app.py` and are available under the same base URL as the image tools (e.g. `http://127.0.0.1:8000`):
+
+- **Merge PDFs**
+  - **Endpoint**: `POST /pdf/merge`
+  - **Body**: `files` – multiple PDF files (`multipart/form-data`)
+  - **Response**: single merged PDF (`merged.pdf`)
+
+- **Split PDF**
+  - **Endpoint**: `POST /pdf/split`
+  - **Body**:
+    - `file` – single PDF
+    - `mode` – `"pages"` or `"range"`
+    - `ranges` – optional ranges string like `"1-3,5,7-10"` (used when `mode="range"`)
+  - **Response**: ZIP archive with the resulting PDFs (`split.zip`)
+
+- **PDF → Images**
+  - **Endpoint**: `POST /pdf/to-images`
+  - **Body**:
+    - `file` – single PDF
+    - `format` – `"png"` or `"jpg"`
+    - `quality` – `"high" | "medium" | "low"` (maps to ~300/150/72 DPI)
+  - **Response**: ZIP archive with one image per page (`pages.zip`)
+
+- **Images → PDF**
+  - **Endpoint**: `POST /pdf/from-images`
+  - **Body**:
+    - `files` – multiple images (PNG/JPG/WebP)
+    - `page_size` – `"a4" | "letter" | "fit"`
+  - **Response**: multi-page PDF (`images.pdf`)
+
+- **Compress PDF**
+  - **Endpoint**: `POST /pdf/compress`
+  - **Body**:
+    - `file` – single PDF
+    - `level` – `"low" | "medium" | "high"`
+  - **Implementation**: uses **PyMuPDF** to downscale and recompress page content images for a good quality/size trade‑off.
+  - **Response**: compressed PDF (`compressed.pdf`)
+
+- **Protect PDF**
+  - **Endpoint**: `POST /pdf/protect`
+  - **Body**:
+    - `file` – single PDF
+    - `password` – required user password
+    - `allow_print`, `allow_copy`, `allow_edit` – booleans for permissions
+  - **Implementation**: uses **pypdf** to encrypt the document with the requested permissions.
+  - **Response**: password-protected PDF (`protected.pdf`)
+
+- **Unlock PDF**
+  - **Endpoint**: `POST /pdf/unlock`
+  - **Body**:
+    - `file` – password-protected PDF
+    - `password` – correct password
+  - **Response**: unlocked PDF (`unlocked.pdf`); returns **401** if the password is incorrect.
+
+### 5.2. Frontend routes for PDF tools
+
+The React frontend exposes each tool under `/pdf-tools/...`:
+
+- Merge PDFs → `/pdf-tools/merge`
+- Split PDF → `/pdf-tools/split`
+- PDF to Images → `/pdf-tools/to-images`
+- Images to PDF → `/pdf-tools/from-images`
+- Compress PDF → `/pdf-tools/compress`
+- Protect PDF → `/pdf-tools/protect`
+- Unlock PDF → `/pdf-tools/unlock`

@@ -18,6 +18,8 @@ import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
 
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 const pdfTools: ToolItem[] = [
   { name: "Merge PDFs", href: "/pdf-tools/merge", icon: Combine, description: "Combine multiple PDFs" },
   { name: "Split PDF", href: "/pdf-tools/split", icon: Split, description: "Split PDF into pages" },
@@ -32,11 +34,18 @@ export default function PDFMerge() {
   const [files, setFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
     setIsComplete(false);
-  }, []);
+    setError(null);
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(null);
+    }
+  }, [downloadUrl]);
 
   const removeFile = (index: number) => {
     setFiles(files.filter((_, i) => i !== index));
@@ -51,12 +60,36 @@ export default function PDFMerge() {
 
   const handleMerge = async () => {
     if (files.length < 2) return;
-    
+
     setIsProcessing(true);
-    // Simulate processing
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsProcessing(false);
-    setIsComplete(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append("files", file);
+      });
+
+      const response = await fetch(`${API_BASE_URL}/pdf/merge`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Merge failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setDownloadUrl(url);
+      setIsComplete(true);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to merge PDFs. Please try again.");
+      setIsComplete(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -160,8 +193,10 @@ export default function PDFMerge() {
                   )}
                 </button>
 
-                {isComplete && (
-                  <button
+                {isComplete && downloadUrl && (
+                  <a
+                    href={downloadUrl}
+                    download="merged.pdf"
                     className={cn(
                       "flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all",
                       "bg-accent text-accent-foreground",
@@ -170,7 +205,7 @@ export default function PDFMerge() {
                   >
                     <Download className="h-4 w-4" />
                     Download
-                  </button>
+                  </a>
                 )}
               </div>
             </motion.div>
@@ -193,6 +228,11 @@ export default function PDFMerge() {
             ))}
           </div>
         </div>
+        {error && (
+          <p className="mt-4 text-sm text-destructive text-center">
+            {error}
+          </p>
+        )}
       </div>
     </ToolLayout>
   );

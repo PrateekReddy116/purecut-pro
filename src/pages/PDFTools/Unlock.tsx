@@ -5,6 +5,8 @@ import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
 
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 const pdfTools: ToolItem[] = [
   { name: "Merge PDFs", href: "/pdf-tools/merge", icon: Combine },
   { name: "Split PDF", href: "/pdf-tools/split", icon: Split },
@@ -22,25 +24,55 @@ export default function PDFUnlock() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [error, setError] = useState("");
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
     setIsComplete(false);
     setError("");
-  }, []);
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(null);
+    }
+  }, [downloadUrl]);
 
   const handleUnlock = async () => {
+    if (files.length === 0 || !files[0] || !password) return;
+
     setIsProcessing(true);
     setError("");
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    // Simulate success or failure
-    if (password === "wrong") {
-      setError("Incorrect password. Please try again.");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", files[0]);
+      formData.append("password", password);
+
+      const response = await fetch(`${API_BASE_URL}/pdf/unlock`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          setError("Incorrect password. Please try again.");
+          return;
+        }
+        throw new Error(`Unlock failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setDownloadUrl(url);
+      setIsComplete(true);
+    } catch (err) {
+      console.error(err);
+      if (!error) {
+        setError("Failed to unlock PDF. Please try again.");
+      }
+      setIsComplete(false);
+    } finally {
       setIsProcessing(false);
-      return;
     }
-    setIsProcessing(false);
-    setIsComplete(true);
   };
 
   return (
@@ -128,11 +160,15 @@ export default function PDFUnlock() {
                   </>
                 )}
               </button>
-              {isComplete && (
-                <button className="flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors">
+              {isComplete && downloadUrl && (
+                <a
+                  href={downloadUrl}
+                  download="unlocked.pdf"
+                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors"
+                >
                   <Download className="h-4 w-4" />
                   Download
-                </button>
+                </a>
               )}
             </div>
           </motion.div>

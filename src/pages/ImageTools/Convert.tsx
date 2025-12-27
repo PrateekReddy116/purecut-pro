@@ -15,6 +15,8 @@ import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
 
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 const imageTools: ToolItem[] = [
   { name: "Format Converter", href: "/image-tools/convert", icon: RefreshCcw, description: "Convert image formats" },
   { name: "Image Compressor", href: "/image-tools/compress", icon: Shrink, description: "Reduce file size" },
@@ -36,6 +38,8 @@ export default function ImageConvert() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
@@ -59,10 +63,35 @@ export default function ImageConvert() {
     if (files.length === 0) return;
     
     setIsProcessing(true);
-    // Simulate processing
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setIsProcessing(false);
-    setIsComplete(true);
+    setError(null);
+    
+    try {
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append("files", file);
+      });
+      formData.append("output_format", outputFormat);
+      
+      const response = await fetch(`${API_BASE_URL}/image/convert`, {
+        method: "POST",
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Conversion failed with status ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setDownloadUrl(url);
+      setIsComplete(true);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to convert images. Please try again.");
+      setIsComplete(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -183,8 +212,10 @@ export default function ImageConvert() {
                   )}
                 </button>
 
-                {isComplete && (
-                  <button
+                {isComplete && downloadUrl && (
+                  <a
+                    href={downloadUrl}
+                    download={`converted_${outputFormat}.zip`}
                     className={cn(
                       "flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all",
                       "bg-accent text-accent-foreground",
@@ -193,7 +224,10 @@ export default function ImageConvert() {
                   >
                     <Download className="h-4 w-4" />
                     Download All
-                  </button>
+                  </a>
+                )}
+                {error && (
+                  <p className="text-sm text-destructive text-center mt-2">{error}</p>
                 )}
               </div>
             </motion.div>
