@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Scissors, Menu, X, Moon, Sun } from "lucide-react";
+import {  Menu, X, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -75,7 +75,11 @@ export function Navbar() {
         <div className="flex items-center justify-between h-14">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
-            <Scissors className="h-5 w-5" />
+            <img 
+              src="/logo.png" 
+              alt="PureCut Pro" 
+              className="h-8 w-8"
+            />
             <span className="font-semibold tracking-tight">PureCut Pro</span>
           </Link>
 

@@ -1,4 +1,9 @@
 from io import BytesIO
+import base64
+import os
+import re
+import shutil
+import subprocess
 from typing import Optional
 import zipfile
 
@@ -9,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from PIL import Image, ImageEnhance, ImageFilter
 from pypdf import PdfReader, PdfWriter
+from pypdf.constants import UserAccessPermissions as PdfUserPerms
 import fitz  # PyMuPDF
 from rembg import remove
 
@@ -23,11 +29,12 @@ except Exception:  # pragma: no cover - optional heavy deps
 
 app = FastAPI(title="PureCut Pro AI Backend", version="0.1.0")
 
-# CORS for local frontend development
-# Allow all localhost/127.0.0.1 origins with any port for development
+# CORS configuration
+# Allow connections from localhost and any IP address on the local network
+# This enables mobile devices on the same network to access the API
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origins=["*"],  # Allow all origins for development (restrict in production)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,6 +48,23 @@ def _pil_to_bytes(image: Image.Image, format: str = "PNG") -> BytesIO:
     return buf
 
 
+def _is_pdf_upload(upload: UploadFile) -> bool:
+    """Accept PDFs when MIME is correct or when the client omits/wrong MIME but the name is .pdf."""
+    ct = (upload.content_type or "").strip().lower()
+    name = (upload.filename or "").lower()
+    if ct in ("application/pdf", "application/x-pdf"):
+        return True
+    if name.endswith(".pdf") and ct in ("", "application/octet-stream", "binary/octet-stream"):
+        return True
+    return False
+
+
+def _sanitize_archive_basename(name: str) -> str:
+    base = os.path.basename(name or "archive").strip() or "archive"
+    base = re.sub(r"[^\w\-. ]+", "", base, flags=re.UNICODE).strip(" .")
+    return base[:200] if base else "archive"
+
+
 def _bytes_to_streaming_pdf(buf: BytesIO, filename: str = "output.pdf") -> StreamingResponse:
     """
     Helper to return a PDF file as a streaming response with a download filename.
@@ -48,6 +72,25 @@ def _bytes_to_streaming_pdf(buf: BytesIO, filename: str = "output.pdf") -> Strea
     buf.seek(0)
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return StreamingResponse(buf, media_type="application/pdf", headers=headers)
+
+
+def _file_to_streaming_pdf(path: str, filename: str = "output.pdf") -> StreamingResponse:
+    """
+    Stream a PDF file from disk as a download response.
+    """
+    f = open(path, "rb")
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(f, media_type="application/pdf", headers=headers)
+
+
+def _which_or_env(env_key: str, default_name: str) -> Optional[str]:
+    """
+    Resolve an external binary path from env var or PATH.
+    """
+    p = (os.getenv(env_key) or "").strip()
+    if p:
+        return p
+    return shutil.which(default_name)
 
 
 def _load_image(file: UploadFile) -> Image.Image:
@@ -103,14 +146,12 @@ async def image_enhancer(
     return StreamingResponse(buf, media_type="image/jpeg")
 
 
-def _load_mask(mask_file: UploadFile, size: Optional[tuple[int, int]]) -> np.ndarray:
+def _decode_mask_bytes(contents: bytes, size: Optional[tuple[int, int]]) -> np.ndarray:
     try:
-        contents = mask_file.file.read()
         mask_img = Image.open(BytesIO(contents)).convert("L")
         if size is not None:
-            mask_img = mask_img.resize(size, Image.NEAREST)
+            mask_img = mask_img.resize(size, Image.Resampling.NEAREST)
         mask = np.array(mask_img)
-        # Binarize mask
         _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
         return mask
     except Exception:
@@ -129,11 +170,21 @@ async def object_remover(
     - image: the original image
     - mask: a grayscale mask where white pixels (255) mark areas to remove
     """
-    pil_img = _load_image(image).convert("RGB")
+    try:
+        img_bytes = await image.read()
+        mask_bytes = await mask.read()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Failed to read upload")
+
+    try:
+        pil_img = Image.open(BytesIO(img_bytes)).convert("RGB")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid image file")
+
     np_img = np.array(pil_img)
     h, w, _ = np_img.shape
 
-    np_mask = _load_mask(mask, size=(w, h))
+    np_mask = _decode_mask_bytes(mask_bytes, size=(w, h))
 
     # OpenCV expects BGR image
     bgr = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
@@ -249,7 +300,7 @@ async def pdf_merge(files: list[UploadFile] = File(...)) -> StreamingResponse:
 
     try:
         for upload in files:
-            if upload.content_type != "application/pdf":
+            if not _is_pdf_upload(upload):
                 raise HTTPException(status_code=400, detail="Only PDF files are supported")
             data = await upload.read()
             reader = PdfReader(BytesIO(data))
@@ -281,7 +332,7 @@ async def pdf_split(
 
     Returns a ZIP file containing the resulting PDFs.
     """
-    if file.content_type != "application/pdf":
+    if not _is_pdf_upload(file):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     try:
@@ -342,7 +393,7 @@ async def pdf_page_count(file: UploadFile = File(...)) -> dict:
     Return the total number of pages in a PDF.
     Used by the frontend Split PDF tool for accurate page counts.
     """
-    if file.content_type != "application/pdf":
+    if not _is_pdf_upload(file):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     try:
@@ -353,6 +404,50 @@ async def pdf_page_count(file: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=400, detail="Invalid PDF file")
 
     return {"pages": total_pages}
+
+
+@app.post("/pdf/preview-pages")
+async def pdf_preview_pages(
+    file: UploadFile = File(...),
+    max_pages: int = Form(24),
+    max_width: int = Form(132),
+) -> dict:
+    """
+    Return small JPEG thumbnails (base64 data URLs) for the first N pages.
+    """
+    if not _is_pdf_upload(file):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    cap = max(1, min(int(max_pages), 50))
+    thumb_w = max(48, min(int(max_width), 240))
+
+    try:
+        data = await file.read()
+        doc = fitz.open(stream=data, filetype="pdf")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid PDF file")
+
+    total = len(doc)
+    previews: list[dict] = []
+
+    try:
+        for i in range(min(total, cap)):
+            page = doc.load_page(i)
+            rect = page.rect
+            if rect.width <= 0:
+                continue
+            scale = thumb_w / rect.width
+            mat = fitz.Matrix(scale, scale)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=80, optimize=True)
+            b64 = base64.standard_b64encode(buf.getvalue()).decode("ascii")
+            previews.append({"page": i + 1, "image": f"data:image/jpeg;base64,{b64}"})
+    finally:
+        doc.close()
+
+    return {"total_pages": total, "previews": previews}
 
 
 @app.post("/pdf/to-images")
@@ -369,7 +464,7 @@ async def pdf_to_images(
 
     Returns a ZIP containing all page images.
     """
-    if file.content_type != "application/pdf":
+    if not _is_pdf_upload(file):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     fmt = format.lower()
@@ -465,58 +560,181 @@ async def images_to_pdf(
     return _bytes_to_streaming_pdf(pdf_buf, filename="images.pdf")
 
 
+def _pdf_save_optimized(doc: fitz.Document, buf: BytesIO, *, garbage: int = 4) -> None:
+    """
+    Lossless size reduction: compress streams, object streams, xref GC.
+    clean=False avoids sanitizing content streams (safer for complex/CID fonts).
+    """
+    doc.save(
+        buf,
+        garbage=garbage,
+        deflate=True,
+        clean=False,
+        deflate_images=True,
+        deflate_fonts=True,
+        use_objstms=1,
+    )
+
+
 @app.post("/pdf/compress")
 async def pdf_compress(
     file: UploadFile = File(...),
-    level: str = Form("medium"),  # low / medium / high
+    level: str = Form("medium"),
+    engine: str = Form("pymupdf"),  # pymupdf | qpdf | ghostscript
+    preset: str = Form("ebook"),  # ghostscript only: screen|ebook|printer|prepress
 ) -> StreamingResponse:
     """
-    Compress a PDF by downscaling embedded images using PyMuPDF.
+    Lossless PDF optimization only (deflate streams, object streams, garbage collection).
+    Does not re-encode or replace image xrefs (that approach corrupts many PDFs with text).
 
-    level:
-      - low: light compression, best quality
-      - medium: balanced
-      - high: maximum compression
+    level selects garbage-collection strength only: low=3, medium/high=4.
+    For heavier compression use external tools (qpdf, Ghostscript) — see README.
     """
-    if file.content_type != "application/pdf":
+    if not _is_pdf_upload(file):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
-    level = level.lower()
-    if level == "low":
-        dpi = 300
-        jpeg_quality = 85
-    elif level == "high":
-        dpi = 96
-        jpeg_quality = 60
-    else:
-        dpi = 150
-        jpeg_quality = 75
+    level = (level or "medium").strip().lower()
+    if level not in ("low", "medium", "high"):
+        raise HTTPException(status_code=400, detail="level must be one of: low, medium, high")
 
+    engine = (engine or "pymupdf").strip().lower()
+    if engine not in ("pymupdf", "qpdf", "ghostscript"):
+        raise HTTPException(status_code=400, detail="engine must be one of: pymupdf, qpdf, ghostscript")
+
+    preset = (preset or "ebook").strip().lower()
+    if preset not in ("screen", "ebook", "printer", "prepress"):
+        raise HTTPException(status_code=400, detail="preset must be one of: screen, ebook, printer, prepress")
+
+    # For large PDFs, avoid reading the entire upload into memory.
+    # Writing to a temporary file allows PyMuPDF to operate without duplicating buffers.
+    tmp_path = None
     try:
-        data = await file.read()
-        doc = fitz.open(stream=data, filetype="pdf")
+        import tempfile
+
+        suffix = ".pdf" if (file.filename or "").lower().endswith(".pdf") else ".pdf"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp_path = tmp.name
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                tmp.write(chunk)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid PDF file")
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+        raise HTTPException(status_code=400, detail="Failed to read uploaded PDF")
 
-    zoom = dpi / 72.0
-    mat = fitz.Matrix(zoom, zoom)
+    import tempfile
 
-    for page_index in range(len(doc)):
-        page = doc.load_page(page_index)
-        pix = page.get_pixmap(matrix=mat)
-        img = fitz.Pixmap(pix, 0) if pix.alpha else pix
-        img_bytes = img.tobytes("jpeg", quality=jpeg_quality)
+    out_path = None
+    try:
+        original_size = os.path.getsize(tmp_path) if tmp_path else None
 
-        # Replace page content with a single raster image
-        rect = page.rect
-        page.clean_contents()
-        page.insert_image(rect, stream=img_bytes)
+        if engine == "pymupdf":
+            garbage = 3 if level == "low" else 4
+            out_buf = BytesIO()
+            try:
+                try:
+                    doc = fitz.open(tmp_path)  # type: ignore[arg-type]
+                except Exception:
+                    raise HTTPException(status_code=400, detail="Invalid PDF file")
+                try:
+                    _pdf_save_optimized(doc, out_buf, garbage=garbage)
+                finally:
+                    doc.close()
+            except HTTPException:
+                raise
 
-    out_buf = BytesIO()
-    doc.save(out_buf, deflate=True)
-    doc.close()
+            out_buf.seek(0)
+            try:
+                optimized_size = len(out_buf.getbuffer())
+            except Exception:
+                optimized_size = None
+            if (
+                original_size is not None
+                and optimized_size is not None
+                and optimized_size >= original_size
+                and tmp_path
+            ):
+                with open(tmp_path, "rb") as f:
+                    out_buf = BytesIO(f.read())
+            return _bytes_to_streaming_pdf(out_buf, filename="compressed.pdf")
 
-    return _bytes_to_streaming_pdf(out_buf, filename="compressed.pdf")
+        # External engines write directly to a file.
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as out_tmp:
+            out_path = out_tmp.name
+
+        timeout_s = int(os.getenv("PDF_COMPRESS_TIMEOUT_SECONDS", "600"))
+
+        if engine == "qpdf":
+            qpdf_bin = _which_or_env("QPDF_PATH", "qpdf")
+            if not qpdf_bin:
+                raise HTTPException(
+                    status_code=503,
+                    detail="qpdf is not installed. Install qpdf and/or set QPDF_PATH to the qpdf executable.",
+                )
+            cmd = [
+                qpdf_bin,
+                "--optimize-images",
+                "--object-streams=generate",
+                "--stream-data=compress",
+                tmp_path,
+                out_path,
+            ]
+        else:
+            gs_bin = (
+                _which_or_env("GHOSTSCRIPT_PATH", "gs")
+                or _which_or_env("GHOSTSCRIPT_PATH", "gswin64c")
+                or _which_or_env("GHOSTSCRIPT_PATH", "gswin32c")
+            )
+            if not gs_bin:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Ghostscript is not installed. Install Ghostscript and/or set GHOSTSCRIPT_PATH to the console executable (e.g. gswin64c).",
+                )
+            cmd = [
+                gs_bin,
+                "-sDEVICE=pdfwrite",
+                "-dCompatibilityLevel=1.4",
+                f"-dPDFSETTINGS=/{preset}",
+                "-dNOPAUSE",
+                "-dQUIET",
+                "-dBATCH",
+                f"-sOutputFile={out_path}",
+                tmp_path,
+            ]
+
+        try:
+            subprocess.run(cmd, check=True, timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=504, detail="Compression timed out. Try a smaller file or a faster mode.")
+        except subprocess.CalledProcessError:
+            raise HTTPException(status_code=500, detail="Compression failed in external engine.")
+
+        # If external engine didn't shrink, return original.
+        try:
+            out_size = os.path.getsize(out_path) if out_path else None
+        except Exception:
+            out_size = None
+        if original_size is not None and out_size is not None and out_size >= original_size:
+            return _file_to_streaming_pdf(tmp_path, filename="compressed.pdf")
+
+        return _file_to_streaming_pdf(out_path, filename="compressed.pdf")
+    finally:
+        # Cleanup temp files
+        if out_path:
+            try:
+                os.unlink(out_path)
+            except Exception:
+                pass
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
 
 @app.post("/pdf/protect")
@@ -530,7 +748,7 @@ async def pdf_protect(
     """
     Add password protection to a PDF using pypdf.
     """
-    if file.content_type != "application/pdf":
+    if not _is_pdf_upload(file):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     try:
@@ -539,15 +757,44 @@ async def pdf_protect(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid PDF file")
 
+    try:
+        import cryptography  # noqa: F401 — required for AES encryption in pypdf
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="PDF encryption needs crypto support. Install with: pip install 'pypdf[crypto]'",
+        )
+
     writer = PdfWriter()
     for page in reader.pages:
         writer.add_page(page)
 
-    perms = {"print": allow_print, "modify": allow_edit, "copy": allow_copy, "annotate": allow_edit}
-    writer.encrypt(user_password=password or None, owner_password=None, permissions=perms)
+    perms_flag = 0
+    if allow_print:
+        perms_flag |= PdfUserPerms.PRINT | PdfUserPerms.PRINT_TO_REPRESENTATION
+    if allow_copy:
+        perms_flag |= PdfUserPerms.EXTRACT | PdfUserPerms.EXTRACT_TEXT_AND_GRAPHICS
+    if allow_edit:
+        perms_flag |= PdfUserPerms.MODIFY | PdfUserPerms.ADD_OR_MODIFY
+
+    try:
+        writer.encrypt(
+            user_password=password,
+            owner_password=password,
+            permissions_flag=perms_flag,
+            algorithm="AES-256",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Encryption failed: {e}. Ensure 'pypdf[crypto]' is installed.",
+        )
 
     out_buf = BytesIO()
-    writer.write(out_buf)
+    try:
+        writer.write(out_buf)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write protected PDF: {e}")
     writer.close()
 
     return _bytes_to_streaming_pdf(out_buf, filename="protected.pdf")
@@ -561,7 +808,7 @@ async def pdf_unlock(
     """
     Remove password protection from a PDF when the correct password is provided.
     """
-    if file.content_type != "application/pdf":
+    if not _is_pdf_upload(file):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     data = await file.read()
@@ -575,6 +822,7 @@ async def pdf_unlock(
             ok = reader.decrypt(password)
         except Exception:
             ok = 0
+        # pypdf returns 0 on failure, 1/2 for success depending on password type
         if ok == 0:
             raise HTTPException(status_code=401, detail="Incorrect password")
 
@@ -587,6 +835,52 @@ async def pdf_unlock(
     writer.close()
 
     return _bytes_to_streaming_pdf(out_buf, filename="unlocked.pdf")
+
+
+# =========================
+# FILE TOOL ENDPOINTS (ZIP)
+# =========================
+
+
+@app.post("/file/create-archive")
+async def file_create_archive(
+    files: list[UploadFile] = File(...),
+    archive_name: str = Form("archive"),
+) -> StreamingResponse:
+    """
+    Pack uploaded files into a single ZIP download.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file is required")
+
+    safe_name = _sanitize_archive_basename(archive_name)
+
+    zip_buf = BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        used_names: set[str] = set()
+        for upload in files:
+            try:
+                raw = await upload.read()
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to read upload: {e}")
+            base = os.path.basename(upload.filename or "file")
+            if not base or base in (".", ".."):
+                base = "file"
+            member = base
+            n = 1
+            while member in used_names:
+                stem, _, ext = base.rpartition(".")
+                if ext and stem:
+                    member = f"{stem}_{n}.{ext}"
+                else:
+                    member = f"{base}_{n}"
+                n += 1
+            used_names.add(member)
+            zf.writestr(member, raw)
+
+    zip_buf.seek(0)
+    headers = {"Content-Disposition": f'attachment; filename="{safe_name}.zip"'}
+    return StreamingResponse(zip_buf, media_type="application/zip", headers=headers)
 
 
 # =========================

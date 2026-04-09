@@ -1,18 +1,16 @@
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { FileText, Combine, Split, ImageIcon, FileImage, Lock, Unlock, FileDown, Download, Eye, EyeOff } from "lucide-react";
+import { FileText, Combine, Split, ImageIcon, FileImage, Lock, Unlock, Download, Eye, EyeOff } from "lucide-react";
 import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
-
-const API_BASE_URL = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "@/config/api";
 
 const pdfTools: ToolItem[] = [
   { name: "Merge PDFs", href: "/pdf-tools/merge", icon: Combine },
   { name: "Split PDF", href: "/pdf-tools/split", icon: Split },
   { name: "PDF to Images", href: "/pdf-tools/to-images", icon: ImageIcon },
   { name: "Images to PDF", href: "/pdf-tools/from-images", icon: FileImage },
-  { name: "Compress PDF", href: "/pdf-tools/compress", icon: FileDown },
   { name: "Protect PDF", href: "/pdf-tools/protect", icon: Lock },
   { name: "Unlock PDF", href: "/pdf-tools/unlock", icon: Unlock },
 ];
@@ -63,7 +61,15 @@ export default function PDFProtect() {
       });
 
       if (!response.ok) {
-        throw new Error(`Protect failed with status ${response.status}`);
+        let msg = `Protect failed (${response.status})`;
+        try {
+          const errBody = await response.json();
+          if (typeof errBody?.detail === "string") msg = errBody.detail;
+          else if (Array.isArray(errBody?.detail)) msg = errBody.detail.map((x: { msg?: string }) => x?.msg).filter(Boolean).join("; ") || msg;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
       }
 
       const blob = await response.blob();
@@ -72,7 +78,7 @@ export default function PDFProtect() {
       setIsComplete(true);
     } catch (err) {
       console.error(err);
-      setError("Failed to protect PDF. Please try again.");
+      setError(err instanceof Error ? err.message : "Failed to protect PDF. Please try again.");
       setIsComplete(false);
     } finally {
       setIsProcessing(false);

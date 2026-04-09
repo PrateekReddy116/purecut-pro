@@ -19,7 +19,6 @@ import PDFMerge from "./pages/PDFTools/Merge";
 import PDFSplit from "./pages/PDFTools/Split";
 import PDFToImages from "./pages/PDFTools/ToImages";
 import ImagesToPDF from "./pages/PDFTools/FromImages";
-import PDFCompress from "./pages/PDFTools/Compress";
 import PDFProtect from "./pages/PDFTools/Protect";
 import PDFUnlock from "./pages/PDFTools/Unlock";
 
@@ -60,7 +59,6 @@ const App = () => (
           <Route path="/pdf-tools/split" element={<PDFSplit />} />
           <Route path="/pdf-tools/to-images" element={<PDFToImages />} />
           <Route path="/pdf-tools/from-images" element={<ImagesToPDF />} />
-          <Route path="/pdf-tools/compress" element={<PDFCompress />} />
           <Route path="/pdf-tools/protect" element={<PDFProtect />} />
           <Route path="/pdf-tools/unlock" element={<PDFUnlock />} />
           

@@ -58,6 +58,8 @@ pip install -r requirements.txt
 
 If `realesrgan` or its dependencies fail to install, the **Image Upscaler** endpoint will still work using a high-quality bicubic fallback.
 
+**Protect PDF** requires the `cryptography` dependency (pulled in via `pypdf[crypto]` in `requirements.txt`). Without it, `/pdf/protect` returns **503** with an install hint.
+
 ### 2.3. (Optional) Real-ESRGAN weights for AI upscaling
 
 If you want model-based upscaling instead of just bicubic resize:
@@ -124,6 +126,24 @@ By default, Vite runs on `http://127.0.0.1:5173` (or a similar port). The AI too
 
 Make sure the **backend** is running before using these tools, otherwise you’ll see network errors in the UI.
 
+### 3.3. Run frontend and API together
+
+From the project root (after `npm install` and a working Python venv with backend deps):
+
+```bash
+npm run dev:all
+```
+
+This runs **Vite** and **`uvicorn`** concurrently (see `package.json`). Stop both with one Ctrl+C.
+
+**Alternative (two terminals):**
+
+- Windows: open PowerShell in `backend/` and run `python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload`, then from the repo root run `npm run dev`.
+- Or run `.\scripts\dev-start.ps1` from the repo root (starts API in a second window, then Vite here).
+- macOS/Linux: `bash scripts/dev-start.sh` starts the API in the background and Vite in the foreground.
+
+For a longer-term **desktop installer / bundled Python** approach, see [PACKAGING.md](PACKAGING.md).
+
 ---
 
 ## 4. AI models and algorithms used
@@ -143,8 +163,8 @@ For the tools implemented in the Python backend:
 
 - **Object Remover (`/object-remover`)**
   - Uses **OpenCV Telea inpainting** (`cv2.inpaint` with `INPAINT_TELEA`):
-    - Input: original image + a **mask image** (white = regions to remove).
-    - Fills in masked regions using surrounding pixels.
+    - Input: original image + a **mask** (PNG; white = regions to remove). The UI builds this mask by painting over the image.
+    - Fills in masked regions using surrounding pixels. Higher-quality inpainting (e.g. LaMa) would need extra models and GPU-friendly packaging.
 
 - **Image Upscaler (`/image-upscaler`)**
   - Tries to use **Real-ESRGAN** (RRDBNet-based) if `realesrgan` is installed and model weights are available at `backend/weights/RealESRGAN_x2plus.pth`.
@@ -194,9 +214,14 @@ All PDF endpoints live in `backend/app.py` and are available under the same base
   - **Endpoint**: `POST /pdf/compress`
   - **Body**:
     - `file` – single PDF
-    - `level` – `"low" | "medium" | "high"`
-  - **Implementation**: uses **PyMuPDF** to downscale and recompress page content images for a good quality/size trade‑off.
-  - **Response**: compressed PDF (`compressed.pdf`)
+    - `level` – `"low" | "medium" | "high"` (PyMuPDF only; selects garbage-collection strength)
+    - `engine` – `"pymupdf" | "qpdf" | "ghostscript"` (default: `"pymupdf"`)
+    - `preset` – `"screen" | "ebook" | "printer" | "prepress"` (Ghostscript only; default: `"ebook"`)
+  - **Implementation**:
+    - `engine=pymupdf`: **lossless** optimization with **PyMuPDF** (deflate streams, object streams, xref cleanup). Does **not** re-encode embedded images.
+    - `engine=qpdf`: **fast, lossless** cleanup/deflate using the `qpdf` binary (must be installed separately).
+    - `engine=ghostscript`: **aggressive** compression using Ghostscript presets (may reduce quality; must be installed separately).
+  - **Response**: optimized PDF (`compressed.pdf`)
 
 - **Protect PDF**
   - **Endpoint**: `POST /pdf/protect`
@@ -204,8 +229,13 @@ All PDF endpoints live in `backend/app.py` and are available under the same base
     - `file` – single PDF
     - `password` – required user password
     - `allow_print`, `allow_copy`, `allow_edit` – booleans for permissions
-  - **Implementation**: uses **pypdf** to encrypt the document with the requested permissions.
+  - **Implementation**: uses **pypdf** with **AES-256** and **`pypdf[crypto]`** (installs `cryptography`). User and owner passwords are set to the same value you enter for maximum viewer compatibility.
   - **Response**: password-protected PDF (`protected.pdf`)
+
+- **Split PDF thumbnails (preview)**
+  - **Endpoint**: `POST /pdf/preview-pages`
+  - **Body**: `file`, optional `max_pages` (default 24, max 50), `max_width` (default 132px)
+  - **Response**: JSON `{ total_pages, previews: [{ page, image }] }` where `image` is a JPEG data URL for UI thumbnails.
 
 - **Unlock PDF**
   - **Endpoint**: `POST /pdf/unlock`

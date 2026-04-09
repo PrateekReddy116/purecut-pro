@@ -1,18 +1,16 @@
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { FileText, Combine, Split, ImageIcon, FileImage, Lock, Unlock, FileDown, Download, Check } from "lucide-react";
+import { FileText, Combine, Split, ImageIcon, FileImage, Lock, Unlock, Download, Check } from "lucide-react";
 import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
-
-const API_BASE_URL = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "@/config/api";
 
 const pdfTools: ToolItem[] = [
   { name: "Merge PDFs", href: "/pdf-tools/merge", icon: Combine },
   { name: "Split PDF", href: "/pdf-tools/split", icon: Split },
   { name: "PDF to Images", href: "/pdf-tools/to-images", icon: ImageIcon },
   { name: "Images to PDF", href: "/pdf-tools/from-images", icon: FileImage },
-  { name: "Compress PDF", href: "/pdf-tools/compress", icon: FileDown },
   { name: "Protect PDF", href: "/pdf-tools/protect", icon: Lock },
   { name: "Unlock PDF", href: "/pdf-tools/unlock", icon: Unlock },
 ];

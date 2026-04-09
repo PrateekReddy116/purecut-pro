@@ -2,10 +2,9 @@ import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { FileText, Combine, Split, ImageIcon, FileImage, Lock, Unlock, FileDown, Download, Check } from "lucide-react";
 import { ToolLayout, ToolItem } from "@/components/ToolLayout";
-import { FileUpload } from "@/components/FileUpload";
+import { FileUpload, ProcessingStatus } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
-
-const API_BASE_URL = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "@/config/api";
 
 const pdfTools: ToolItem[] = [
   { name: "Merge PDFs", href: "/pdf-tools/merge", icon: Combine },
@@ -18,24 +17,30 @@ const pdfTools: ToolItem[] = [
 ];
 
 const compressionLevels = [
-  { value: "low", label: "Low Compression", desc: "Best quality, larger file", reduction: "~20%" },
-  { value: "medium", label: "Recommended", desc: "Balanced quality & size", reduction: "~50%" },
-  { value: "high", label: "Maximum", desc: "Smallest file, lower quality", reduction: "~80%" },
+  { value: "safe", label: "Safe (lossless)", desc: "Keeps quality; often small savings", reduction: "PyMuPDF" },
+  { value: "fast", label: "Fast (lossless)", desc: "Quick cleanup/deflate; best-effort", reduction: "qpdf" },
+  { value: "small", label: "Smaller file", desc: "Aggressive; may reduce quality", reduction: "Ghostscript" },
 ];
 
 export default function PDFCompress() {
   const [files, setFiles] = useState<File[]>([]);
-  const [compression, setCompression] = useState("medium");
+  const [compression, setCompression] = useState("safe");
+  const [gsPreset, setGsPreset] = useState<"screen" | "ebook" | "printer" | "prepress">("ebook");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState<string | undefined>(undefined);
   const [isComplete, setIsComplete] = useState(false);
   const [result, setResult] = useState({ original: 0, compressed: 0 });
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const LARGE_FILE_BYTES = 50 * 1024 * 1024;
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
     setIsComplete(false);
     setError(null);
+    setProgress(0);
+    setStatus(undefined);
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl);
       setDownloadUrl(null);
@@ -50,26 +55,75 @@ export default function PDFCompress() {
 
     setIsProcessing(true);
     setError(null);
+    setIsComplete(false);
+    setProgress(0);
+    setStatus("Uploading...");
 
     try {
       const formData = new FormData();
       formData.append("file", files[0]);
-      formData.append("level", compression);
-
-      const response = await fetch(`${API_BASE_URL}/pdf/compress`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Compression failed with status ${response.status}`);
+      // Back-compat: keep sending level, but we now choose an engine.
+      formData.append("level", "medium");
+      if (compression === "safe") {
+        formData.append("engine", "pymupdf");
+      } else if (compression === "fast") {
+        formData.append("engine", "qpdf");
+      } else {
+        formData.append("engine", "ghostscript");
+        formData.append("preset", gsPreset);
       }
 
-      const blob = await response.blob();
+      const blob: Blob = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${API_BASE_URL}/pdf/compress`);
+        xhr.responseType = "blob";
+
+        xhr.upload.onprogress = (evt) => {
+          if (!evt.lengthComputable) return;
+          const pct = Math.min(85, Math.max(0, Math.round((evt.loaded / evt.total) * 85)));
+          setProgress(pct);
+          setStatus("Uploading...");
+        };
+
+        xhr.onloadstart = () => {
+          setProgress(0);
+          setStatus("Uploading...");
+        };
+
+        xhr.upload.onloadend = () => {
+          setProgress((p) => Math.max(p, 85));
+          setStatus("Compressing on server...");
+        };
+
+        xhr.onprogress = (evt) => {
+          // Download progress (may be unknown if server doesn't send Content-Length).
+          if (!evt.lengthComputable) {
+            setProgress((p) => Math.max(p, 90));
+            return;
+          }
+          const pct = 90 + Math.round((evt.loaded / evt.total) * 10);
+          setProgress(Math.min(99, Math.max(90, pct)));
+        };
+
+        xhr.onerror = () => reject(new Error("Network error"));
+        xhr.ontimeout = () => reject(new Error("Request timed out"));
+        xhr.onload = () => {
+          if (xhr.status < 200 || xhr.status >= 300) {
+            reject(new Error(`Compression failed with status ${xhr.status}`));
+            return;
+          }
+          resolve(xhr.response);
+        };
+
+        xhr.send(formData);
+      });
+
       const url = URL.createObjectURL(blob);
       setDownloadUrl(url);
       setResult({ ...result, compressed: blob.size });
       setIsComplete(true);
+      setProgress(100);
+      setStatus("Done");
     } catch (err) {
       console.error(err);
       setError("Failed to compress PDF. Please try again.");
@@ -98,6 +152,7 @@ export default function PDFCompress() {
         <FileUpload
           accept={{ "application/pdf": [".pdf"] }}
           maxFiles={1}
+          maxSize={Infinity}
           onFilesSelected={handleFilesSelected}
           title="Upload a PDF to compress"
           description="PDF files only"
@@ -105,6 +160,8 @@ export default function PDFCompress() {
 
         {files.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mt-8 space-y-6">
+            <ProcessingStatus isProcessing={isProcessing} progress={progress} status={status} />
+
             {/* File info */}
             <div className="p-4 rounded-xl bg-secondary border border-border">
               <div className="flex items-center justify-between">
@@ -113,13 +170,23 @@ export default function PDFCompress() {
                   <div>
                     <p className="font-medium">{files[0].name}</p>
                     <p className="text-sm text-muted-foreground">Original: {formatSize(result.original)}</p>
+                    {files[0].size > LARGE_FILE_BYTES && (
+                      <p className="text-xs text-amber-600 mt-1">
+                        Compression may take longer due to larger file size.
+                      </p>
+                    )}
                   </div>
                 </div>
                 {isComplete && (
                   <div className="text-right">
                     <p className="font-medium text-green-600">{formatSize(result.compressed)}</p>
                     <p className="text-sm text-muted-foreground">
-                      {Math.round((1 - result.compressed / result.original) * 100)}% smaller
+                      {(() => {
+                        if (result.original <= 0) return "";
+                        const pct = Math.round((1 - result.compressed / result.original) * 100);
+                        if (pct <= 0) return "Already compact — no further reduction";
+                        return `${pct}% smaller`;
+                      })()}
                     </p>
                   </div>
                 )}
@@ -150,6 +217,28 @@ export default function PDFCompress() {
                   </button>
                 ))}
               </div>
+              {compression === "small" && (
+                <div className="mt-3 p-3 rounded-xl border border-amber-300/40 bg-amber-500/10">
+                  <p className="text-xs text-muted-foreground">
+                    “Smaller file” uses Ghostscript and may reduce quality (especially scanned PDFs).
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(["screen", "ebook", "printer", "prepress"] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setGsPreset(p)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-full text-xs border transition-colors",
+                          gsPreset === p ? "bg-foreground text-background border-foreground" : "bg-secondary border-border hover:bg-muted"
+                        )}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Actions */}

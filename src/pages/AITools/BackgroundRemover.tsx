@@ -21,7 +21,7 @@ const aiTools: ToolItem[] = [
   { name: "Image Upscaler", href: "/ai-tools/upscaler", icon: ZoomIn, description: "Upscale images with AI" },
 ];
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "@/config/api";
 
 export default function BackgroundRemover() {
   const [files, setFiles] = useState<File[]>([]);

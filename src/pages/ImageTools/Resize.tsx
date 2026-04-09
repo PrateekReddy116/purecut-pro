@@ -4,8 +4,7 @@ import { ImageIcon, RefreshCcw, Shrink, Crop, RotateCw, Droplet, Download, Link2
 import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
-
-const API_BASE_URL = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "@/config/api";
 
 const imageTools: ToolItem[] = [
   { name: "Format Converter", href: "/image-tools/convert", icon: RefreshCcw },

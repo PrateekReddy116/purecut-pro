@@ -1,4 +1,4 @@
-import { FileText, Combine, Split, ImageIcon, FileImage, Lock, Unlock, FileDown } from "lucide-react";
+import { FileText, Combine, Split, ImageIcon, FileImage, Lock, Unlock } from "lucide-react";
 import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { motion } from "framer-motion";
 import { SparklesText } from "@/components/ui/sparkles-text";
@@ -8,7 +8,6 @@ const pdfTools: ToolItem[] = [
   { name: "Split PDF", href: "/pdf-tools/split", icon: Split, description: "Split PDF into pages" },
   { name: "PDF to Images", href: "/pdf-tools/to-images", icon: ImageIcon, description: "Convert PDF to images" },
   { name: "Images to PDF", href: "/pdf-tools/from-images", icon: FileImage, description: "Create PDF from images" },
-  { name: "Compress PDF", href: "/pdf-tools/compress", icon: FileDown, description: "Reduce PDF file size" },
   { name: "Protect PDF", href: "/pdf-tools/protect", icon: Lock, description: "Add password protection" },
   { name: "Unlock PDF", href: "/pdf-tools/unlock", icon: Unlock, description: "Remove password protection" },
 ];
@@ -34,7 +33,7 @@ export default function PDFToolsIndex() {
           </motion.div>
           <SparklesText text="PDF Tools" className="mb-6 text-foreground" />
           <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-            This tool has Merge PDFs, Split PDF, PDF to Images, Images to PDF, Compress PDF, Protect PDF, and Unlock PDF.
+            This tool has Merge PDFs, Split PDF, PDF to Images, Images to PDF, Protect PDF, and Unlock PDF.
           </p>
         </div>
       </div>

@@ -72,7 +72,9 @@ export function FileUpload({
             <p className="text-sm font-medium">{title}</p>
             <p className="text-xs text-muted-foreground">{description}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Max {maxFiles} files, up to {maxSize / 1024 / 1024}MB each
+              {Number.isFinite(maxSize)
+                ? `Max ${maxFiles} files, up to ${maxSize / 1024 / 1024}MB each`
+                : `Max ${maxFiles} files, no size limit`}
             </p>
           </div>
         </div>

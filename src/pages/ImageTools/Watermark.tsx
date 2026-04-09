@@ -1,11 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ImageIcon, RefreshCcw, Shrink, Crop, RotateCw, Droplet, Download, Type, Image } from "lucide-react";
 import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
-
-const API_BASE_URL = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "@/config/api";
 
 const imageTools: ToolItem[] = [
   { name: "Format Converter", href: "/image-tools/convert", icon: RefreshCcw },
@@ -23,26 +22,126 @@ const positions = [
   { value: "bottom-right", label: "Bottom Right" },
 ];
 
+type NaturalSize = { w: number; h: number };
+
+function measureTextWatermarkSize(text: string, nw: number, nh: number): NaturalSize {
+  const fontSize = Math.max(24, Math.floor(Math.min(nw, nh) / 20));
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { w: 80, h: 40 };
+  ctx.font = `${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+  const textW = ctx.measureText(text).width;
+  const textH = fontSize * 1.25;
+  const padding = 20;
+  return { w: textW + padding * 2, h: textH + padding * 2 };
+}
+
+function thumbnailNaturalSize(iw: number, ih: number, nw: number, nh: number): NaturalSize {
+  const maxW = nw * 0.2;
+  const maxH = nh * 0.2;
+  const scale = Math.min(maxW / iw, maxH / ih, 1);
+  return { w: iw * scale, h: ih * scale };
+}
+
+function watermarkPasteRect(
+  nw: number,
+  nh: number,
+  wmW: number,
+  wmH: number,
+  position: string,
+  margin = 20
+): { x: number; y: number } {
+  if (position === "top-left") return { x: margin, y: margin };
+  if (position === "top-right") return { x: nw - wmW - margin, y: margin };
+  if (position === "center") return { x: (nw - wmW) / 2, y: (nh - wmH) / 2 };
+  if (position === "bottom-left") return { x: margin, y: nh - wmH - margin };
+  return { x: nw - wmW - margin, y: nh - wmH - margin };
+}
+
 export default function AddWatermark() {
   const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<string | null>(null);
+  const [baseNatural, setBaseNatural] = useState<NaturalSize | null>(null);
   const [watermarkType, setWatermarkType] = useState<"text" | "image">("text");
   const [watermarkText, setWatermarkText] = useState("© Your Name");
   const [position, setPosition] = useState("bottom-right");
   const [opacity, setOpacity] = useState(50);
   const [watermarkImageFile, setWatermarkImageFile] = useState<File | null>(null);
+  const [wmImageNatural, setWmImageNatural] = useState<NaturalSize | null>(null);
+  const [wmImageObjectUrl, setWmImageObjectUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const previewWrapRef = useRef<HTMLDivElement>(null);
+  const [previewScale, setPreviewScale] = useState(1);
+
+  useEffect(() => {
+    if (!watermarkImageFile) {
+      setWmImageNatural(null);
+      setWmImageObjectUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(watermarkImageFile);
+    setWmImageObjectUrl(url);
+    const img = new window.Image();
+    img.onload = () => {
+      setWmImageNatural({ w: img.naturalWidth, h: img.naturalHeight });
+    };
+    img.src = url;
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [watermarkImageFile]);
+
+  useEffect(() => {
+    const el = previewWrapRef.current;
+    if (!el || !baseNatural) return;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      if (w > 0 && baseNatural.w > 0) setPreviewScale(w / baseNatural.w);
+    });
+    ro.observe(el);
+    const w = el.clientWidth;
+    if (w > 0) setPreviewScale(w / baseNatural.w);
+    return () => ro.disconnect();
+  }, [baseNatural, preview]);
+
+  const overlayStyle = useMemo(() => {
+    if (!baseNatural) return null;
+    const { w: nw, h: nh } = baseNatural;
+    let wmW: number;
+    let wmH: number;
+    if (watermarkType === "text" && watermarkText.trim()) {
+      const s = measureTextWatermarkSize(watermarkText, nw, nh);
+      wmW = s.w;
+      wmH = s.h;
+    } else if (watermarkType === "image" && wmImageNatural) {
+      const s = thumbnailNaturalSize(wmImageNatural.w, wmImageNatural.h, nw, nh);
+      wmW = s.w;
+      wmH = s.h;
+    } else {
+      return null;
+    }
+    const { x, y } = watermarkPasteRect(nw, nh, wmW, wmH, position);
+    return {
+      left: `${(x / nw) * 100}%`,
+      top: `${(y / nh) * 100}%`,
+      width: `${(wmW / nw) * 100}%`,
+      height: `${(wmH / nh) * 100}%`,
+    };
+  }, [baseNatural, watermarkType, watermarkText, wmImageNatural, position]);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
     setIsComplete(false);
+    setBaseNatural(null);
     if (selectedFiles.length > 0) {
       const reader = new FileReader();
       reader.onload = (e) => setPreview(e.target?.result as string);
       reader.readAsDataURL(selectedFiles[0]);
+    } else {
+      setPreview(null);
     }
   }, []);
 
@@ -89,17 +188,6 @@ export default function AddWatermark() {
     }
   };
 
-  const getPositionClasses = () => {
-    switch (position) {
-      case "top-left": return "top-4 left-4";
-      case "top-right": return "top-4 right-4";
-      case "center": return "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2";
-      case "bottom-left": return "bottom-4 left-4";
-      case "bottom-right": return "bottom-4 right-4";
-      default: return "bottom-4 right-4";
-    }
-  };
-
   return (
     <ToolLayout title="Image Tools" description="Image processing" tools={imageTools} categoryIcon={ImageIcon}>
       <div className="max-w-4xl mx-auto">
@@ -122,14 +210,52 @@ export default function AddWatermark() {
               {/* Preview */}
               <div className="space-y-3">
                 <span className="text-sm font-medium text-muted-foreground">Preview</span>
-                <div className="relative aspect-square rounded-2xl overflow-hidden bg-secondary border border-border">
-                  <img src={preview} alt="Preview" className="w-full h-full object-contain" />
-                  {watermarkType === "text" && watermarkText && (
+                <p className="text-xs text-muted-foreground">
+                  Matches server placement (same margins, 20% max image watermark, text size ~min(side)/20).
+                </p>
+                <div
+                  ref={previewWrapRef}
+                  className="relative w-full max-h-[min(70vh,560px)] rounded-2xl overflow-hidden bg-secondary border border-border flex justify-center items-start"
+                  style={
+                    baseNatural
+                      ? { aspectRatio: `${baseNatural.w} / ${baseNatural.h}` }
+                      : { minHeight: "200px" }
+                  }
+                >
+                  <img
+                    src={preview}
+                    alt="Preview"
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                    onLoad={(e) => {
+                      const el = e.currentTarget;
+                      setBaseNatural({ w: el.naturalWidth, h: el.naturalHeight });
+                    }}
+                  />
+                  {overlayStyle && watermarkType === "text" && watermarkText.trim() && baseNatural && (
                     <div
-                      className={cn("absolute text-foreground font-medium pointer-events-none", getPositionClasses())}
-                      style={{ opacity: opacity / 100 }}
+                      className="absolute pointer-events-none flex items-center justify-center overflow-hidden"
+                      style={{ ...overlayStyle, opacity: opacity / 100 }}
                     >
-                      {watermarkText}
+                      <span
+                        className="text-white font-medium text-center px-2"
+                        style={{
+                          fontSize: `${Math.max(24, Math.floor(Math.min(baseNatural.w, baseNatural.h) / 20)) * previewScale}px`,
+                        }}
+                      >
+                        {watermarkText}
+                      </span>
+                    </div>
+                  )}
+                  {overlayStyle && watermarkType === "image" && wmImageObjectUrl && wmImageNatural && (
+                    <div
+                      className="absolute pointer-events-none flex items-center justify-center"
+                      style={{ ...overlayStyle, opacity: opacity / 100 }}
+                    >
+                      <img
+                        src={wmImageObjectUrl}
+                        alt=""
+                        className="max-w-full max-h-full w-full h-full object-contain"
+                      />
                     </div>
                   )}
                 </div>

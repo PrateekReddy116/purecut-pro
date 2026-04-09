@@ -1,18 +1,16 @@
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { FileText, Combine, Split, ImageIcon, FileImage, Lock, Unlock, FileDown, Download } from "lucide-react";
+import { FileText, Combine, Split, ImageIcon, FileImage, Lock, Unlock, Download } from "lucide-react";
 import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
-
-const API_BASE_URL = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "@/config/api";
 
 const pdfTools: ToolItem[] = [
   { name: "Merge PDFs", href: "/pdf-tools/merge", icon: Combine },
   { name: "Split PDF", href: "/pdf-tools/split", icon: Split },
   { name: "PDF to Images", href: "/pdf-tools/to-images", icon: ImageIcon },
   { name: "Images to PDF", href: "/pdf-tools/from-images", icon: FileImage },
-  { name: "Compress PDF", href: "/pdf-tools/compress", icon: FileDown },
   { name: "Protect PDF", href: "/pdf-tools/protect", icon: Lock },
   { name: "Unlock PDF", href: "/pdf-tools/unlock", icon: Unlock },
 ];
@@ -27,12 +25,16 @@ export default function PDFSplit() {
   const [error, setError] = useState<string | null>(null);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [isFetchingPages, setIsFetchingPages] = useState(false);
+  const [pagePreviews, setPagePreviews] = useState<{ page: number; image: string }[]>([]);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
     setIsComplete(false);
     setError(null);
     setTotalPages(null);
+    setPagePreviews([]);
+    setPreviewError(null);
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl);
       setDownloadUrl(null);
@@ -42,22 +44,42 @@ export default function PDFSplit() {
       setIsFetchingPages(true);
       (async () => {
         try {
-          const formData = new FormData();
-          formData.append("file", file);
-          const response = await fetch(`${API_BASE_URL}/pdf/page-count`, {
-            method: "POST",
-            body: formData,
-          });
-          if (!response.ok) {
-            throw new Error(`Page count failed with status ${response.status}`);
+          const countFd = new FormData();
+          countFd.append("file", file);
+          const previewFd = new FormData();
+          previewFd.append("file", file);
+          previewFd.append("max_pages", "50");
+          previewFd.append("max_width", "120");
+
+          const [countRes, previewRes] = await Promise.all([
+            fetch(`${API_BASE_URL}/pdf/page-count`, { method: "POST", body: countFd }),
+            fetch(`${API_BASE_URL}/pdf/preview-pages`, { method: "POST", body: previewFd }),
+          ]);
+
+          let pagesFromCount: number | null = null;
+          if (countRes.ok) {
+            const data = await countRes.json();
+            if (typeof data.pages === "number") {
+              pagesFromCount = data.pages;
+              setTotalPages(data.pages);
+            }
           }
-          const data = await response.json();
-          if (typeof data.pages === "number") {
-            setTotalPages(data.pages);
+
+          if (previewRes.ok) {
+            const prevData = await previewRes.json();
+            if (Array.isArray(prevData.previews)) {
+              setPagePreviews(prevData.previews);
+            }
+            if (typeof prevData.total_pages === "number" && pagesFromCount === null) {
+              setTotalPages(prevData.total_pages);
+            }
+          } else {
+            setPreviewError("Thumbnails could not be loaded.");
           }
         } catch (err) {
           console.error(err);
           setError("Could not read page count for this PDF, but splitting will still work.");
+          setPreviewError("Thumbnails could not be loaded.");
         } finally {
           setIsFetchingPages(false);
         }
@@ -178,17 +200,39 @@ export default function PDFSplit() {
               </div>
             )}
 
-            {/* Page preview grid */}
-            {totalPages !== null && (
+            {/* Page preview strip */}
+            {files.length > 0 && (
               <div className="space-y-3">
-                <span className="text-sm font-medium text-muted-foreground">Pages</span>
-                <div className="grid grid-cols-6 gap-3">
-                  {Array.from({ length: Math.min(totalPages, 12) }).map((_, i) => (
-                    <div key={i} className="aspect-[3/4] rounded-lg bg-secondary border border-border flex items-center justify-center">
-                      <span className="text-sm text-muted-foreground">{i + 1}</span>
-                    </div>
-                  ))}
-                </div>
+                <span className="text-sm font-medium text-muted-foreground">Page previews</span>
+                {previewError && (
+                  <p className="text-xs text-muted-foreground">{previewError}</p>
+                )}
+                {isFetchingPages && pagePreviews.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Loading thumbnails…</p>
+                ) : pagePreviews.length > 0 ? (
+                  <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-thin">
+                    {pagePreviews.map((p) => (
+                      <div
+                        key={p.page}
+                        className="flex-shrink-0 w-[72px] rounded-lg border border-border bg-background overflow-hidden"
+                      >
+                        <img
+                          src={p.image}
+                          alt={`Page ${p.page}`}
+                          className="w-full h-auto object-top object-cover max-h-28"
+                        />
+                        <p className="text-center text-[10px] text-muted-foreground py-1">{p.page}</p>
+                      </div>
+                    ))}
+                    {totalPages !== null && pagePreviews.length < totalPages && (
+                      <div className="flex-shrink-0 flex items-center px-2 text-xs text-muted-foreground">
+                        +{totalPages - pagePreviews.length} more
+                      </div>
+                    )}
+                  </div>
+                ) : totalPages !== null ? (
+                  <p className="text-sm text-muted-foreground">No thumbnails (splitting still works).</p>
+                ) : null}
               </div>
             )}
 

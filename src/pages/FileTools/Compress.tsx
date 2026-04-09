@@ -4,6 +4,7 @@ import { FolderArchive, FileArchive, FolderOpen, Download, Trash2 } from "lucide
 import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
+import { API_BASE_URL } from "@/config/api";
 
 const fileTools: ToolItem[] = [
   { name: "Create Archive", href: "/file-tools/compress", icon: FileArchive },
@@ -15,21 +16,59 @@ export default function CreateArchive() {
   const [archiveName, setArchiveName] = useState("archive");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFilesSelected = useCallback((selectedFiles: File[]) => {
     setFiles(selectedFiles);
     setIsComplete(false);
-  }, []);
+    setError(null);
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(null);
+    }
+  }, [downloadUrl]);
 
   const removeFile = (index: number) => {
     setFiles(files.filter((_, i) => i !== index));
   };
 
   const handleCreate = async () => {
+    if (files.length === 0) return;
+
     setIsProcessing(true);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsProcessing(false);
-    setIsComplete(true);
+    setError(null);
+    if (downloadUrl) {
+      URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(null);
+    }
+
+    try {
+      const formData = new FormData();
+      files.forEach((f) => formData.append("files", f));
+      formData.append("archive_name", archiveName.trim() || "archive");
+
+      const response = await fetch(`${API_BASE_URL}/file/create-archive`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      setDownloadUrl(url);
+      setIsComplete(true);
+    } catch (e) {
+      console.error(e);
+      setError("Could not create the ZIP. Check that the backend is running and try again.");
+      setIsComplete(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const formatSize = (bytes: number) => {
@@ -41,6 +80,7 @@ export default function CreateArchive() {
   };
 
   const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+  const safeZipName = `${(archiveName.trim() || "archive").replace(/[^\w\-. ]+/g, "") || "archive"}.zip`;
 
   return (
     <ToolLayout title="File Tools" description="File operations" tools={fileTools} categoryIcon={FolderArchive}>
@@ -89,6 +129,7 @@ export default function CreateArchive() {
                       <p className="text-xs text-muted-foreground">{formatSize(file.size)}</p>
                     </div>
                     <button
+                      type="button"
                       onClick={() => removeFile(index)}
                       className="p-2 rounded-lg hover:bg-background transition-colors"
                     >
@@ -100,12 +141,13 @@ export default function CreateArchive() {
             </div>
 
             {/* Actions */}
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <button
+                type="button"
                 onClick={handleCreate}
                 disabled={isProcessing || files.length === 0}
                 className={cn(
-                  "flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium transition-all",
+                  "flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium transition-all min-w-[200px]",
                   "bg-foreground text-background hover:opacity-90",
                   "disabled:opacity-50"
                 )}
@@ -117,13 +159,20 @@ export default function CreateArchive() {
                   </>
                 )}
               </button>
-              {isComplete && (
-                <button className="flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors">
+              {isComplete && downloadUrl && (
+                <a
+                  href={downloadUrl}
+                  download={safeZipName}
+                  className="flex items-center justify-center gap-2 px-6 py-3 rounded-full font-medium bg-secondary hover:bg-muted transition-colors"
+                >
                   <Download className="h-4 w-4" />
-                  Download {archiveName}.zip
-                </button>
+                  Download {safeZipName}
+                </a>
               )}
             </div>
+            {error && (
+              <p className="text-sm text-destructive text-center">{error}</p>
+            )}
           </motion.div>
         )}
       </div>

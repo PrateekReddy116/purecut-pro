@@ -8,7 +8,6 @@ import {
   FileImage,
   Lock,
   Unlock,
-  FileDown,
   GripVertical,
   Trash2,
   Loader2,
@@ -17,15 +16,13 @@ import {
 import { ToolLayout, ToolItem } from "@/components/ToolLayout";
 import { FileUpload } from "@/components/FileUpload";
 import { cn } from "@/lib/utils";
-
-const API_BASE_URL = "http://127.0.0.1:8000";
+import { API_BASE_URL } from "@/config/api";
 
 const pdfTools: ToolItem[] = [
   { name: "Merge PDFs", href: "/pdf-tools/merge", icon: Combine, description: "Combine multiple PDFs" },
   { name: "Split PDF", href: "/pdf-tools/split", icon: Split, description: "Split PDF into pages" },
   { name: "PDF to Images", href: "/pdf-tools/to-images", icon: ImageIcon, description: "Convert PDF to images" },
   { name: "Images to PDF", href: "/pdf-tools/from-images", icon: FileImage, description: "Create PDF from images" },
-  { name: "Compress PDF", href: "/pdf-tools/compress", icon: FileDown, description: "Reduce PDF file size" },
   { name: "Protect PDF", href: "/pdf-tools/protect", icon: Lock, description: "Add password protection" },
   { name: "Unlock PDF", href: "/pdf-tools/unlock", icon: Unlock, description: "Remove password protection" },
 ];
