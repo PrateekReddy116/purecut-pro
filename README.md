@@ -1,4 +1,4 @@
-## PureCut Pro – Frontend & Python AI Backend
+## PureCut Pro
 
 This repo contains the **PureCut Pro** React frontend (Vite + TypeScript + Tailwind + shadcn-ui) and a **Python FastAPI backend** that powers AI image tools:
 
